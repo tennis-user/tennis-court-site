@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>テニスコート確保作業サイト</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+body {
+    font-family: メイリオ, Meiryo, sans-serif;
+    font-size: 14px;
+    margin: 20px;
+}
+h1 { font-size: 16px; }
+
+table { border-collapse: collapse; margin-top: 15px; }
+th, td {
+    border: 1px solid #666;
+    padding: 6px 10px;
+    text-align: center;
+}
+
+td.toggle {
+    cursor: pointer;
+    color: black;
+    font-weight: normal;
+}
+
+td.toggle.on {
+    color: red;
+    font-weight: bold;
+}
+
+.upload-area {
+    border: 1px dashed #999;
+    padding: 15px;
+    margin-top: 10px;
+}
+.controls { margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>テニスコート確保作業サイト</h1>
+
+<div id="upload1" class="upload-area">
+    <p>「抽選申込作業依頼書（Excel）」をアップロードしてください。</p>
+    <input type="file" id="file1" accept=".xlsx,.xls">
+</div>
+
+<div id="tableArea"></div>
+
+<div class="controls" id="controls" style="display:none;">
+    <button id="newBtn">新しい「抽選申込作業依頼書」のアップロード</button>
+</div>
+
+<div id="upload2" class="upload-area" style="display:none;">
+    <p>新しい「抽選申込作業依頼書」をアップロードしますか？</p>
+    <input type="file" id="file2" accept=".xlsx,.xls"><br><br>
+    <button id="cancelBtn">何もせずに戻る</button>
+</div>
+
+<script>
+function makeToggle() {
+    document.querySelectorAll('#tableArea td').forEach(td => {
+        const text = td.innerText.trim();
+        if (text !== '') {
+            td.classList.add('toggle');
+            td.addEventListener('click', () => {
+                td.classList.toggle('on');
+            });
+        }
+    });
+}
+
+function showExcel(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const html = XLSX.utils.sheet_to_html(ws, { editable: false });
+        const area = document.getElementById('tableArea');
+        area.innerHTML = html;
+        makeToggle();
+        document.getElementById('controls').style.display = 'block';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+file1.addEventListener('change', e => {
+    if (e.target.files.length > 0) {
+        showExcel(e.target.files[0]);
+        upload1.style.display = 'none';
+    }
+});
+
+newBtn.addEventListener('click', () => {
+    upload2.style.display = 'block';
+});
+
+file2.addEventListener('change', e => {
+    if (e.target.files.length > 0) {
+        showExcel(e.target.files[0]);
+        upload2.style.display = 'none';
+    }
+});
+
+cancelBtn.addEventListener('click', () => {
+    upload2.style.display = 'none';
+});
+</script>
+
+</body>
+</html>
