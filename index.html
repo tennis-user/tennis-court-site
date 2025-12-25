@@ -3,112 +3,169 @@
 <head>
 <meta charset="UTF-8">
 <title>テニスコート確保作業サイト</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <style>
-body {
-    font-family: メイリオ, Meiryo, sans-serif;
-    font-size: 14px;
-    margin: 20px;
+body { font-family: メイリオ; font-size:14px; }
+h1 { font-size:16px; }
+table { border-collapse: collapse; }
+td {
+  border:1px solid #999;
+  padding:4px 8px;
+  text-align:center;
 }
-h1 { font-size: 16px; }
-
-table { border-collapse: collapse; margin-top: 15px; }
-th, td {
-    border: 1px solid #666;
-    padding: 6px 10px;
-    text-align: center;
-}
-
-td.toggle {
-    cursor: pointer;
-    color: black;
-    font-weight: normal;
-}
-
-td.toggle.on {
-    color: red;
-    font-weight: bold;
-}
-
-.upload-area {
-    border: 1px dashed #999;
-    padding: 15px;
-    margin-top: 10px;
-}
-.controls { margin-top: 20px; }
+.toggle { cursor:pointer; }
+.on { color:red; font-weight:bold; }
 </style>
 </head>
 <body>
 
 <h1>テニスコート確保作業サイト</h1>
 
-<div id="upload1" class="upload-area">
-    <p>「抽選申込作業依頼書（Excel）」をアップロードしてください。</p>
-    <input type="file" id="file1" accept=".xlsx,.xls">
+<div id="uploadArea">
+  <p>「抽選申込作業依頼書（Excel）」をアップロードしてください。</p>
+  <input type="file" id="fileInput">
 </div>
 
 <div id="tableArea"></div>
 
-<div class="controls" id="controls" style="display:none;">
-    <button id="newBtn">新しい「抽選申込作業依頼書」のアップロード</button>
-</div>
-
-<div id="upload2" class="upload-area" style="display:none;">
-    <p>新しい「抽選申込作業依頼書」をアップロードしますか？</p>
-    <input type="file" id="file2" accept=".xlsx,.xls"><br><br>
-    <button id="cancelBtn">何もせずに戻る</button>
-</div>
+<hr>
+<button onclick="resetUpload()">新しい「抽選申込作業依頼書」のアップロード</button>
 
 <script>
-function makeToggle() {
-    document.querySelectorAll('#tableArea td').forEach(td => {
-        const text = td.innerText.trim();
-        if (text !== '') {
-            td.classList.add('toggle');
-            td.addEventListener('click', () => {
-                td.classList.toggle('on');
-            });
+const GITHUB_OWNER = "あなたのGitHubユーザー名";
+const GITHUB_REPO  = "リポジトリ名";
+const GITHUB_TOKEN = "ghp_xxxxxxxxxxxxxxxxxxxxx";
+const DATA_FILE = "current_data.json";
+const API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${DATA_FILE}`;
+
+let currentJSON = null;
+let currentSHA  = null;
+
+window.onload = async () => {
+  if (!await loadFromGitHub()) {
+    uploadArea.style.display = "block";
+  }
+};
+
+fileInput.onchange = e => {
+  const reader = new FileReader();
+  reader.onload = evt => {
+    const wb = XLSX.read(evt.target.result, { type: "binary" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    currentJSON = sheetToJSON(sheet);
+    renderTable();
+    saveToGitHub();
+  };
+  reader.readAsBinaryString(e.target.files[0]);
+};
+
+/* ===== Excel構造保持変換 ===== */
+function sheetToJSON(sheet) {
+  const range = XLSX.utils.decode_range(sheet["!ref"]);
+  const merges = sheet["!merges"] || [];
+
+  const table = [];
+  const skip = {};
+
+  merges.forEach(m => {
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (r !== m.s.r || c !== m.s.c) {
+          skip[`${r},${c}`] = true;
         }
+      }
+    }
+  });
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      if (skip[`${r},${c}`]) continue;
+
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = sheet[addr];
+      const merge = merges.find(m => m.s.r === r && m.s.c === c);
+
+      row.push({
+        text: cell ? cell.v : "",
+        toggle: false,
+        rowspan: merge ? merge.e.r - merge.s.r + 1 : 1,
+        colspan: merge ? merge.e.c - merge.s.c + 1 : 1
+      });
+    }
+    table.push(row);
+  }
+
+  return {
+    table,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+/* ===== 描画 ===== */
+function renderTable() {
+  uploadArea.style.display = "none";
+  tableArea.innerHTML = "";
+  const table = document.createElement("table");
+
+  currentJSON.table.forEach(row => {
+    const tr = document.createElement("tr");
+    row.forEach(cell => {
+      const td = document.createElement("td");
+      td.textContent = cell.text;
+      if (cell.toggle) td.classList.add("on");
+      if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
+      if (cell.colspan > 1) td.colSpan = cell.colspan;
+
+      td.onclick = () => {
+        cell.toggle = !cell.toggle;
+        renderTable();
+        saveToGitHub();
+      };
+      tr.appendChild(td);
     });
+    table.appendChild(tr);
+  });
+
+  tableArea.appendChild(table);
 }
 
-function showExcel(file) {
-    const reader = new FileReader();
-    reader.onload = e => {
-        const data = new Uint8Array(e.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const html = XLSX.utils.sheet_to_html(ws, { editable: false });
-        const area = document.getElementById('tableArea');
-        area.innerHTML = html;
-        makeToggle();
-        document.getElementById('controls').style.display = 'block';
-    };
-    reader.readAsArrayBuffer(file);
+/* ===== GitHub I/O ===== */
+async function loadFromGitHub() {
+  const res = await fetch(API_URL);
+  if (!res.ok) return false;
+  const data = await res.json();
+  currentSHA = data.sha;
+  currentJSON = JSON.parse(atob(data.content));
+  renderTable();
+  return true;
 }
 
-file1.addEventListener('change', e => {
-    if (e.target.files.length > 0) {
-        showExcel(e.target.files[0]);
-        upload1.style.display = 'none';
-    }
-});
+async function saveToGitHub() {
+  const body = {
+    message: "update tennis court data",
+    content: btoa(JSON.stringify(currentJSON, null, 2)),
+    sha: currentSHA
+  };
+  const res = await fetch(API_URL, {
+    method: "PUT",
+    headers: {
+      Authorization: "token " + GITHUB_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const result = await res.json();
+  currentSHA = result.content.sha;
+}
 
-newBtn.addEventListener('click', () => {
-    upload2.style.display = 'block';
-});
-
-file2.addEventListener('change', e => {
-    if (e.target.files.length > 0) {
-        showExcel(e.target.files[0]);
-        upload2.style.display = 'none';
-    }
-});
-
-cancelBtn.addEventListener('click', () => {
-    upload2.style.display = 'none';
-});
+function resetUpload() {
+  if (!confirm("現在の内容を破棄して新しいExcelをアップロードしますか？")) return;
+  currentJSON = null;
+  currentSHA = null;
+  tableArea.innerHTML = "";
+  uploadArea.style.display = "block";
+}
 </script>
-
 </body>
 </html>
