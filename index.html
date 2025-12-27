@@ -58,7 +58,7 @@ let currentSha = null;
 async function loadFromGitHub() {
   const res = await fetch(API_URL, {
     headers: {
-      "Authorization": "token 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",
+      "Authorization": "token " + GITHUB_TOKEN
     }
   });
 
