@@ -23,7 +23,7 @@ td, th { border:1px solid #333; padding:4px 8px; text-align:center; }
 /* ====== ★ あなたが書き換えるのはここだけ ====== */
 const GITHUB_OWNER = "tennis-user";
 const GITHUB_REPO  = "tennis-court-site";
-const GITHUB_TOKEN = "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";
+const GITHUB_TOKEN = "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";
 /* ================================================ */
 
 const FILE_NAME = "current_data.json";
@@ -93,7 +93,6 @@ async function save(data){
   const g=await fetch(API_URL,{
     headers:{
       Authorization:"token "+GITHUB_TOKEN,
-      Accept:"application/vnd.github+json"
     }
   });
   if(g.ok) sha=(await g.json()).sha;
@@ -103,7 +102,6 @@ async function save(data){
     headers:{
       Authorization:"token "+GITHUB_TOKEN,
       "Content-Type":"application/json",
-      Accept:"application/vnd.github+json"
     },
     body:JSON.stringify({
       message:"update",
