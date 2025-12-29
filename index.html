@@ -164,6 +164,7 @@ async function saveToGitHub(data) {
     headers: {
       Authorization: "token " + GITHUB_TOKEN,
       "Content-Type": "application/json"
+      "Accept": "application/vnd.github+json"
     },
     body: JSON.stringify({
       message: "update data",
