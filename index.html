@@ -5,7 +5,7 @@
 <title>テニスコート確保作業サイト</title>
 <style>
 body {
-  font-family: Meiryo, sans-serif;
+  font-family: メイリオ, Meiryo, sans-serif;
   font-size: 14px;
 }
 h1 {
@@ -16,22 +16,16 @@ table {
   margin-top: 10px;
 }
 td, th {
-  border: 1px solid #999;
-  padding: 4px 6px;
-  vertical-align: middle;
+  border: 1px solid #444;
+  padding: 4px 8px;
+  text-align: center;
 }
-.name {
+.toggle {
   cursor: pointer;
 }
-.name.on {
+.win {
   color: red;
   font-weight: bold;
-}
-#uploadArea {
-  margin-top: 16px;
-}
-button {
-  margin-right: 10px;
 }
 </style>
 </head>
@@ -39,201 +33,145 @@ button {
 <body>
 <h1>テニスコート確保作業サイト</h1>
 
-<div id="content">
-  <p id="message">「抽選申込作業依頼書（Excel）」をアップロードしてください。</p>
-  <input type="file" id="fileInput" accept=".xlsx,.xls">
-</div>
+<input type="file" id="excelInput" accept=".xlsx">
+<div id="tableArea"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-// ====== ★ あなたが書き換えるのはここだけ ======
+/* ====== ★ あなたが書き換えるのはここだけ ====== */
 const GITHUB_OWNER = "tennis-user";
 const GITHUB_REPO  = "tennis-court-site";
 const GITHUB_TOKEN = "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";
-// ===============================================
+/* ================================================ */
 
 const JSON_PATH = "current_data.json";
 const API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${JSON_PATH}`;
 const RAW_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/${JSON_PATH}`;
 
 let currentData = null;
-let currentSha = null;
 
-// --------------------
-// GitHub から JSON を読む（raw）
-// --------------------
-async function loadFromGitHub() {
+/* ---------- 起動時：保存済みJSONを読む ---------- */
+window.addEventListener("load", async () => {
   try {
     const res = await fetch(RAW_URL + "?t=" + Date.now());
-    if (!res.ok) return;
-    const json = await res.json();
-    currentData = json;
-    renderTable(json);
-  } catch (e) {
-    console.log("no json yet");
-  }
-}
-
-// --------------------
-// GitHub に JSON を保存（API / sha対応）
-// --------------------
-async function saveToGitHub(data) {
-  if (!currentSha) {
-    const r = await fetch(API_URL, {
-      headers: {
-  Authorization: "token " + GITHUB_TOKEN,
-  "Content-Type": "application/json"
-}
-
-    });
-    if (r.ok) {
-      const j = await r.json();
-      currentSha = j.sha;
+    if (res.ok) {
+      currentData = await res.json();
+      renderTable(currentData);
     }
+  } catch (e) {
+    console.log("初期JSONなし");
   }
+});
 
-  const body = {
-    message: "update data",
-    content: btoa(unescape(encodeURIComponent(JSON.stringify(data)))),
-    sha: currentSha
-  };
+/* ---------- Excelアップロード ---------- */
+document.getElementById("excelInput").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
 
-  const res = await fetch(API_URL, {
-    method: "PUT",
-   headers: {
-  Authorization: "token " + GITHUB_TOKEN,
-  "Content-Type": "application/json"
-}
-
-      Authorization: "token " + GITHUB_TOKEN,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
+  const json = XLSX.utils.sheet_to_json(ws, {
+    header: 1,
+    defval: null
   });
 
-  const json = await res.json();
-  currentSha = json.content.sha;
-}
-
-// --------------------
-// Excel を読む（セル結合対応）
-// --------------------
-function handleExcel(e) {
-  const file = e.target.files[0];
-  const reader = new FileReader();
-
-  reader.onload = evt => {
-    const wb = XLSX.read(evt.target.result, { type: "binary" });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
-    const merges = ws["!merges"] || [];
-
-    // 初期セル構造
-    const cells = rows.map(r =>
-      r.map(v => ({
-        text: v ?? "",
-        isName: typeof v === "string" && v.trim() !== "",
-        on: false,
-        rowspan: 1,
-        colspan: 1,
-        hidden: false
-      }))
-    );
-
-    // 結合情報反映
-    merges.forEach(m => {
-      const r0 = m.s.r;
-      const c0 = m.s.c;
-      const r1 = m.e.r;
-      const c1 = m.e.c;
-
-      cells[r0][c0].rowspan = r1 - r0 + 1;
-      cells[r0][c0].colspan = c1 - c0 + 1;
-
-      for (let r = r0; r <= r1; r++) {
-        for (let c = c0; c <= c1; c++) {
-          if (r !== r0 || c !== c0) {
-            cells[r][c].hidden = true;
-          }
-        }
-      }
-    });
-
-    currentData = cells;
-    saveToGitHub(currentData);
-    renderTable(currentData);
+  currentData = {
+    cells: json,
+    merges: ws["!merges"] || []
   };
 
-  reader.readAsBinaryString(file);
-}
+  await saveToGitHub(currentData);
+  renderTable(currentData);
+});
 
-// --------------------
-// 表示（セル結合＋トグル）
-// --------------------
+/* ---------- 表示（セル結合再現） ---------- */
 function renderTable(data) {
-  const content = document.getElementById("content");
-  content.innerHTML = "";
-
+  const area = document.getElementById("tableArea");
+  area.innerHTML = "";
   const table = document.createElement("table");
 
-  data.forEach(row => {
+  const skip = {};
+  data.merges.forEach(m => {
+    for (let r = m.s.r; r <= m.e.r; r++) {
+      for (let c = m.s.c; c <= m.e.c; c++) {
+        if (r !== m.s.r || c !== m.s.c) {
+          skip[`${r},${c}`] = true;
+        }
+      }
+    }
+  });
+
+  data.cells.forEach((row, r) => {
     const tr = document.createElement("tr");
-    row.forEach(cell => {
-      if (cell.hidden) return;
+    row.forEach((cell, c) => {
+      if (skip[`${r},${c}`]) return;
 
       const td = document.createElement("td");
-      td.textContent = cell.text;
-
-      if (cell.rowspan > 1) td.rowSpan = cell.rowspan;
-      if (cell.colspan > 1) td.colSpan = cell.colspan;
-
-      if (cell.isName) {
-        td.className = "name" + (cell.on ? " on" : "");
-        td.onclick = () => {
-          cell.on = !cell.on;
-          saveToGitHub(currentData);
-          renderTable(currentData);
-        };
+      const merge = data.merges.find(m => m.s.r === r && m.s.c === c);
+      if (merge) {
+        td.rowSpan = merge.e.r - merge.s.r + 1;
+        td.colSpan = merge.e.c - merge.s.c + 1;
       }
 
+      if (typeof cell === "string") {
+        td.textContent = cell;
+        td.classList.add("toggle");
+        td.onclick = () => {
+          td.classList.toggle("win");
+          saveToGitHub(collectTable());
+        };
+      } else {
+        td.textContent = cell ?? "";
+      }
       tr.appendChild(td);
     });
     table.appendChild(tr);
   });
 
-  content.appendChild(table);
-
-  // 下部アップロードUI
-  const uploadArea = document.createElement("div");
-  uploadArea.id = "uploadArea";
-
-  const newBtn = document.createElement("button");
-  newBtn.textContent = "新しい抽選申込作業依頼書のアップロード";
-
-  newBtn.onclick = () => {
-    uploadArea.innerHTML = "";
-
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = ".xlsx,.xls";
-    fileInput.onchange = handleExcel;
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "何もせずに戻る";
-    cancelBtn.onclick = () => renderTable(currentData);
-
-    uploadArea.appendChild(fileInput);
-    uploadArea.appendChild(cancelBtn);
-  };
-
-  uploadArea.appendChild(newBtn);
-  content.appendChild(uploadArea);
+  area.appendChild(table);
 }
 
-// 初期イベント
-document.getElementById("fileInput").addEventListener("change", handleExcel);
-loadFromGitHub();
+/* ---------- 表状態をJSON化 ---------- */
+function collectTable() {
+  const rows = [];
+  document.querySelectorAll("table tr").forEach(tr => {
+    const row = [];
+    tr.querySelectorAll("td").forEach(td => {
+      row.push({
+        text: td.textContent,
+        win: td.classList.contains("win")
+      });
+    });
+    rows.push(row);
+  });
+  return rows;
+}
+
+/* ---------- GitHub保存 ---------- */
+async function saveToGitHub(data) {
+  let sha = null;
+  const g = await fetch(API_URL, {
+    headers: {
+      Authorization: "token " + GITHUB_TOKEN
+    }
+  });
+  if (g.ok) {
+    sha = (await g.json()).sha;
+  }
+
+  await fetch(API_URL, {
+    method: "PUT",
+    headers: {
+      Authorization: "token " + GITHUB_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "update data",
+      content: btoa(unescape(encodeURIComponent(JSON.stringify(data)))),
+      sha
+    })
+  });
+}
 </script>
 </body>
 </html>
