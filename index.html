@@ -80,7 +80,11 @@ async function loadFromGitHub() {
 async function saveToGitHub(data) {
   if (!currentSha) {
     const r = await fetch(API_URL, {
-      headers: { Authorization: "token " + GITHUB_TOKEN }
+      headers: {
+  Authorization: "token " + GITHUB_TOKEN,
+  "Content-Type": "application/json"
+}
+
     });
     if (r.ok) {
       const j = await r.json();
@@ -96,7 +100,11 @@ async function saveToGitHub(data) {
 
   const res = await fetch(API_URL, {
     method: "PUT",
-    headers: {
+   headers: {
+  Authorization: "token " + GITHUB_TOKEN,
+  "Content-Type": "application/json"
+}
+
       Authorization: "token " + GITHUB_TOKEN,
       "Content-Type": "application/json"
     },
