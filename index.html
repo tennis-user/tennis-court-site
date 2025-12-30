@@ -2,114 +2,108 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>テニスコート確保作業サイト</title>
+<title>テニスコート確保作業用Webサイト</title>
 <style>
-body { font-family: メイリオ, Meiryo, sans-serif; font-size:14px; }
-h1 { font-size:16px; }
-table { border-collapse:collapse; margin-top:10px; }
-td, th { border:1px solid #333; padding:4px 8px; text-align:center; }
-.toggle { cursor:pointer; }
-.win { color:red; font-weight:bold; }
+  body {
+    font-family: sans-serif;
+  }
+  table {
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+  td {
+    border: 1px solid #666;
+    padding: 4px 8px;
+    text-align: center;
+    min-width: 40px;
+  }
+  .winner {
+    color: red;
+    font-weight: bold;
+  }
 </style>
 </head>
 <body>
 
-<h1>テニスコート確保作業サイト</h1>
-<input type="file" id="excel" accept=".xlsx">
-<div id="view"></div>
+<h2>テニスコート確保作業用Webサイト（確定版）</h2>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<div id="tableArea">読み込み中...</div>
+
 <script>
-/* ====== ★ あなたが書き換えるのはここだけ ====== */
-const GITHUB_OWNER = "tennis-user";
-const GITHUB_REPO  = "tennis-court-site";
-const GITHUB_TOKEN = "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";
-/* ================================================ */
-
-const FILE_NAME = "current_data.json";
-const API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${FILE_NAME}`;
-const RAW_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/${FILE_NAME}`;
-
-let state = null;
-
-/* 起動時：保存済みJSONを読む */
-window.onload = async () => {
-  try {
-    const r = await fetch(RAW_URL + "?t=" + Date.now());
-    if (r.ok) {
-      state = await r.json();
-      draw(state);
-    }
-  } catch {}
-};
-
-/* Excel読み込み */
-document.getElementById("excel").onchange = async e => {
-  const buf = await e.target.files[0].arrayBuffer();
-  const wb = XLSX.read(buf, { type:"array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-
-  state = {
-    cells: XLSX.utils.sheet_to_json(ws, { header:1, defval:"" }),
-    merges: ws["!merges"] || []
-  };
-  await save(state);
-  draw(state);
-};
-
-/* 表示（セル結合再現） */
-function draw(data){
-  const area = document.getElementById("view");
-  area.innerHTML = "";
-  const tbl = document.createElement("table");
-  const skip = {};
-
-  data.merges.forEach(m=>{
-    for(let r=m.s.r;r<=m.e.r;r++)
-      for(let c=m.s.c;c<=m.e.c;c++)
-        if(r!==m.s.r||c!==m.s.c) skip[`${r},${c}`]=1;
+fetch('data/current_data.json')
+  .then(res => res.json())
+  .then(data => render(data))
+  .catch(() => {
+    document.getElementById('tableArea').textContent =
+      'データを読み込めませんでした';
   });
 
-  data.cells.forEach((row,r)=>{
-    const tr=document.createElement("tr");
-    row.forEach((v,c)=>{
-      if(skip[`${r},${c}`]) return;
-      const td=document.createElement("td");
-      const m=data.merges.find(x=>x.s.r===r&&x.s.c===c);
-      if(m){ td.rowSpan=m.e.r-m.s.r+1; td.colSpan=m.e.c-m.s.c+1; }
-      td.textContent=v;
-      td.className="toggle";
-      td.onclick=()=>{ td.classList.toggle("win"); save(state); };
+function render(data) {
+  const range = decodeRange(data.ref);
+  const table = document.createElement('table');
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const tr = document.createElement('tr');
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cellId = encodeCell(r, c);
+
+      if (isMergedChild(cellId, data.merges)) continue;
+
+      const td = document.createElement('td');
+      td.textContent = data.excel[cellId] ?? '';
+
+      const merge = getMerge(cellId, data.merges);
+      if (merge) {
+        td.rowSpan = merge.e.r - merge.s.r + 1;
+        td.colSpan = merge.e.c - merge.s.c + 1;
+      }
+
+      if (data.winners[cellId]) {
+        td.classList.add('winner');
+      }
+
       tr.appendChild(td);
-    });
-    tbl.appendChild(tr);
-  });
-  area.appendChild(tbl);
+    }
+    table.appendChild(tr);
+  }
+
+  const area = document.getElementById('tableArea');
+  area.innerHTML = '';
+  area.appendChild(table);
 }
 
-/* GitHub保存（存在確認→PUT） */
-async function save(data){
-  let sha=null;
-  const g=await fetch(API_URL,{
-    headers:{
-      Authorization:"token "+GITHUB_TOKEN,
-    }
-  });
-  if(g.ok) sha=(await g.json()).sha;
+/* --- utility --- */
 
-  await fetch(API_URL,{
-    method:"PUT",
-    headers:{
-      Authorization:"token "+GITHUB_TOKEN,
-      "Content-Type":"application/json",
-    },
-    body:JSON.stringify({
-      message:"update",
-      content:btoa(unescape(encodeURIComponent(JSON.stringify(data)))),
-      sha
-    })
+function encodeCell(r, c) {
+  return String.fromCharCode(65 + c) + (r + 1);
+}
+
+function decodeRange(ref) {
+  const [s, e] = ref.split(':');
+  return {
+    s: { r: parseInt(s.slice(1)) - 1, c: s.charCodeAt(0) - 65 },
+    e: { r: parseInt(e.slice(1)) - 1, c: e.charCodeAt(0) - 65 }
+  };
+}
+
+function getMerge(cell, merges) {
+  return merges.find(m =>
+    cell === encodeCell(m.s.r, m.s.c)
+  );
+}
+
+function isMergedChild(cell, merges) {
+  return merges.some(m => {
+    const r = parseInt(cell.slice(1)) - 1;
+    const c = cell.charCodeAt(0) - 65;
+    return (
+      (r > m.s.r || c > m.s.c) &&
+      r >= m.s.r && r <= m.e.r &&
+      c >= m.s.c && c <= m.e.c
+    );
   });
 }
 </script>
+
 </body>
 </html>
